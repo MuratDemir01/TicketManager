@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using TicketManager.Entities;
+using TicketManager.Enums;
 
 namespace TicketManager.Data.Configurations
 {
@@ -17,6 +18,7 @@ namespace TicketManager.Data.Configurations
                 .HasConversion<string>()
                 .HasMaxLength(50)
                 .IsRequired();
+            builder.Property(x => x.Status).HasDefaultValue(Status.Active);
             builder.HasIndex(x => x.Email).IsUnique();
             builder.HasIndex(x => x.UserName).IsUnique();
         }

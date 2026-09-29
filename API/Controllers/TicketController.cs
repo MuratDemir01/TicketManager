@@ -36,7 +36,7 @@ namespace TicketManager.API.Controllers
             public string CustomerName { get; set; } = null!;
             public string CustomerEmail { get; set; } = null!;
             public TicketPriority Priority { get; set; }
-            public TicketStatus Status { get; set; }
+            public TicketStatus TicketStatus { get; set; }
             public string? AssignedUserId { get; set; }
             public string? CreatedByUserId { get; set; }
             public DateTime CreatedAt { get; set; }
@@ -88,7 +88,7 @@ namespace TicketManager.API.Controllers
         public class ChangeStatusDto
         {
             [Required]
-            public TicketStatus Status { get; set; }
+            public TicketStatus TicketStatus { get; set; }
         }
 
         public class ChangePriorityDto
@@ -131,11 +131,13 @@ namespace TicketManager.API.Controllers
         public class TicketFilter
         {
             public string? Search { get; set; }
-            public TicketStatus? Status { get; set; }
+            public TicketStatus? TicketStatus { get; set; }
             public TicketPriority? Priority { get; set; }
             public string? AssignedUserId { get; set; }
             public int Page { get; set; } = 1;
             public int PageSize { get; set; } = 20;
+            public TicketSortBy Sort { get; set; } = TicketSortBy.CreatedAt;
+            public SortDirection Direction { get; set; } = SortDirection.Desc;
         }
 
         #endregion
@@ -154,7 +156,7 @@ namespace TicketManager.API.Controllers
             CustomerName = ticket.CustomerName,
             CustomerEmail = ticket.CustomerEmail,
             Priority = ticket.Priority,
-            Status = ticket.Status,
+            TicketStatus = ticket.TicketStatus,
             AssignedUserId = ticket.AssignedUserId,
             CreatedByUserId = ticket.CreatedByUserId,
             CreatedAt = ticket.CreatedAt,
@@ -170,7 +172,7 @@ namespace TicketManager.API.Controllers
             CustomerName = ticket.CustomerName,
             CustomerEmail = ticket.CustomerEmail,
             Priority = ticket.Priority,
-            Status = ticket.Status,
+            TicketStatus = ticket.TicketStatus,
             AssignedUserId = ticket.AssignedUserId,
             CreatedByUserId = ticket.CreatedByUserId,
             CreatedAt = ticket.CreatedAt,
@@ -219,12 +221,14 @@ namespace TicketManager.API.Controllers
         {
             var (items, totalCount, page, pageSize) = await _tickets.GetListAsync(
                 filter.Search,
-                filter.Status,
+                filter.TicketStatus,
                 filter.Priority,
                 filter.AssignedUserId,
                 filter.Page,
                 filter.PageSize,
-                EmployeeIdForRestriction);
+                EmployeeIdForRestriction,
+                filter.Sort,
+                filter.Direction);
 
             return Ok(new PagedResult<TicketDto>
             {
@@ -233,6 +237,127 @@ namespace TicketManager.API.Controllers
                 Page = page,
                 PageSize = pageSize
             });
+        }
+
+        // Liste ile aynı filtreler, sayfalama yok, üst sınır 5000. Rol kısıtı GetListAsync içinde.
+        [HttpGet("export")]
+        [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Employee}")]
+        public async Task<IActionResult> ExportCsv([FromQuery] TicketFilter filter)
+        {
+            var (items, _, _, _) = await _tickets.GetListAsync(
+                filter.Search,
+                filter.TicketStatus,
+                filter.Priority,
+                filter.AssignedUserId,
+                page: 1,
+                pageSize: 5000,
+                EmployeeIdForRestriction,
+                filter.Sort,
+                filter.Direction);
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("TicketNumber,Title,CustomerName,CustomerEmail,Priority,TicketStatus,AssignedUserId,CreatedByUserId,CreatedAt,UpdatedAt");
+            foreach (var t in items)
+            {
+                sb.Append(Csv(t.TicketNumber)).Append(',')
+                    .Append(Csv(t.Title)).Append(',')
+                    .Append(Csv(t.CustomerName)).Append(',')
+                    .Append(Csv(t.CustomerEmail)).Append(',')
+                    .Append(t.Priority).Append(',')
+                    .Append(t.TicketStatus).Append(',')
+                    .Append(Csv(t.AssignedUserId)).Append(',')
+                    .Append(Csv(t.CreatedByUserId)).Append(',')
+                    .Append(t.CreatedAt.ToString("o")).Append(',')
+                    .Append(t.UpdatedAt?.ToString("o") ?? "")
+                    .AppendLine();
+            }
+
+            var bytes = System.Text.Encoding.UTF8.GetPreamble()
+                .Concat(System.Text.Encoding.UTF8.GetBytes(sb.ToString()))
+                .ToArray();
+            return File(bytes, "text/csv; charset=utf-8", $"tickets-{DateTime.UtcNow.ToString("yyyyMMdd-HHmmss")}.csv");
+        }
+
+        private static string Csv(string? value)
+        {
+            var v = value ?? "";
+            if (v.Contains('"') || v.Contains(',') || v.Contains('\n') || v.Contains('\r'))
+                return $"\"{v.Replace("\"", "\"\"")}\"";
+            return v;
+        }
+
+        public class ImportTicketRowDto
+        {
+            [Required, MaxLength(150)]
+            public string Title { get; set; } = null!;
+
+            [Required]
+            public string Description { get; set; } = null!;
+
+            [Required, MaxLength(150)]
+            public string CustomerName { get; set; } = null!;
+
+            [Required, EmailAddress, MaxLength(256)]
+            public string CustomerEmail { get; set; } = null!;
+
+            [Required]
+            public TicketPriority Priority { get; set; }
+
+            public string? AssignedUserId { get; set; }
+        }
+
+        public class ImportTicketsRequest
+        {
+            [Required, MinLength(1)]
+            public List<ImportTicketRowDto> Rows { get; set; } = new();
+        }
+
+        public class ImportTicketsResult
+        {
+            public int CreatedCount { get; set; }
+            public List<string> Errors { get; set; } = new();
+        }
+
+        [HttpPost("import")]
+        [Authorize(Roles = AppRoles.Admin)]
+        public async Task<ActionResult<ImportTicketsResult>> Import(ImportTicketsRequest request)
+        {
+            if (!ModelState.IsValid)
+                return ValidationProblem(ModelState);
+
+            if (request.Rows.Count > 200)
+                return BadRequest(new { message = "Tek seferde en fazla 200 satır aktarılabilir." });
+
+            var result = new ImportTicketsResult();
+            var actingUserId = CurrentUser.Id(User);
+
+            for (var i = 0; i < request.Rows.Count; i++)
+            {
+                var row = request.Rows[i];
+                var line = i + 1;
+                try
+                {
+                    if (!Enum.IsDefined(typeof(TicketPriority), row.Priority))
+                        throw new InvalidOperationException("Geçersiz öncelik.");
+
+                    await _tickets.CreateAsync(
+                        row.Title,
+                        row.Description,
+                        row.CustomerName,
+                        row.CustomerEmail,
+                        row.Priority,
+                        actingUserId,
+                        row.AssignedUserId);
+
+                    result.CreatedCount++;
+                }
+                catch (Exception ex)
+                {
+                    result.Errors.Add($"Satır {line}: {ex.Message}");
+                }
+            }
+
+            return Ok(result);
         }
 
         [HttpGet("{id:int}")]
@@ -305,7 +430,7 @@ namespace TicketManager.API.Controllers
 
             var ticket = await _tickets.ChangeStatusAsync(
                 id,
-                dto.Status,
+                dto.TicketStatus,
                 CurrentUser.Id(User),
                 CurrentUser.IsAdmin(User));
 

@@ -1,3 +1,5 @@
+using TicketManager.Enums;
+
 namespace TicketManager.Entities
 {
     public class TicketHistory
@@ -10,6 +12,7 @@ namespace TicketManager.Entities
         public string? NewValue { get; set; }
         public string ChangedByUserId { get; set; } = null!;
         public DateTime ChangedAt { get; set; }
+        public Status Status { get; set; } = Status.Active;
 
         public Ticket Ticket { get; set; } = null!;
     }

@@ -47,7 +47,8 @@ namespace TicketManager.Services
             {
                 UserName = name,
                 Email = mail,
-                Role = role
+                Role = role,
+                Status = Status.Active
             };
             user.PasswordHash = _hasher.HashPassword(user, password);
 

@@ -14,10 +14,15 @@ Müşteri talep (ticket) yönetimi için .NET 8 Web API projesi.
 4. Paketleri yükle ve API'yi çalıştır:
    - dotnet restore
    - dotnet run --project API
-5. Swagger UI adresleri:
+5. Dashboard (React) için ayrı terminalde:
+   - cd Dashboard
+   - npm install
+   - npm run dev
+   - http://localhost:5173
+6. Swagger UI adresleri:
    - http://localhost:5280/swagger
    - https://localhost:7280/swagger
-6. Önce login al ('POST /api/auth/login'):
+7. Önce login al ('POST /api/auth/login'):
 
 {
   "userNameOrEmail": "ahmet.yilmaz@firma.com",
@@ -33,6 +38,7 @@ Swagger'da Authorize → 'Bearer {token}' yapıştır. Sonra ticket endpointleri
 - SQLite
 - JWT Bearer + Identity PasswordHasher
 - Swashbuckle (Swagger)
+- React + Vite (Dashboard)
 
 ## Test kullanıcıları ve rolleri
 
@@ -69,6 +75,7 @@ Employee: Yalnız kendisine atanmış talepler, kendi talebinde not ve durum.
   - 'API' ('TicketManager.API'): Web API, controllerlar, request/response DTOlar, 'PagedResult'
   - 'Core' ('TicketManager.Core'): entity'ler, enumlar, DbContext, migrationlar, servisler
   - 'Tests' ('TicketManager.Tests'): xUnit unit testleri
+  - 'Dashboard': React (Vite) login, rol bazlı talep/kullanıcı ekranları
   - 'ConsoleApplications': ileride eklenecek mini konsol uygulamaları. Şu an boş.
 - 'API' projesi 'Core'a project reference ile bağlı.
 
@@ -93,7 +100,7 @@ Employee: Yalnız kendisine atanmış talepler, kendi talebinde not ve durum.
 
 ## Tamamlanamayan bölümler
 
-- UI henüz yok.
+- İsteğe bağlı maddelerden Docker, CiCd, optimistic concurrency, ayrı audit ekranı ve integration testleri yok.
 
 ## Bilinen hatalar
 
@@ -121,3 +128,12 @@ Employee: Yalnız kendisine atanmış talepler, kendi talebinde not ve durum.
 - https://stackoverflow.com/questions/70605781/how-to-have-the-same-response-format-for-400-response-raised-from-badrequest-and — ModelState hatalarını ValidationProblem ile döndürme
 - https://stackoverflow.com/questions/59027413/how-do-you-protect-your-jwt-symmetric-security-key — JWT_KEY'i ortam değişkeninden okuma
 - https://learn.microsoft.com/en-us/ef/core/modeling/value-conversions — User.Role enumunu veritabanında string tutma (HasConversion)
+- https://vite.dev/guide/ — Dashboard iskeleti (Vite + React + TypeScript)
+- https://react.dev/learn — bileşen, state ve form temelleri
+- https://react.dev/learn/conditional-rendering — koşullu render (`isAdmin &&` kolon/buton)
+- https://react.dev/learn/synchronizing-with-effects — Effect ile dış veri / API senkronu (`useEffect` + fetch)
+- https://reactrouter.com/start/declarative/routing — `BrowserRouter` / `Routes` ile sayfa yönlendirme
+- https://stackoverflow.com/questions/76106378/how-to-set-up-asp-net-core-6-web-api-cors-for-react-app — Dashboard (5173) → API çağrısında CORS; `AddCors` + `WithOrigins` + `UseCors`
+- https://stackoverflow.com/questions/70416696/cors-in-net-6-0-web-api — `UseCors`'un `UseAuthentication` / `UseAuthorization` öncesine konması
+- https://stackoverflow.com/questions/59096102/asp-net-core-mvc-api-serialize-enums-to-string — API enum'larını string göndermek (`JsonStringEnumConverter`)
+- https://stackoverflow.com/questions/68824056/how-to-assign-bearer-token-to-authorization-header-in-javascript — `fetch` isteğine `Authorization: Bearer {token}` ekleme

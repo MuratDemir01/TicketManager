@@ -41,7 +41,7 @@ namespace TicketManager.Tests
                 Description = "Desc",
                 CustomerName = "Ali",
                 CustomerEmail = "ali@ornek.com",
-                Status = TicketStatus.Assigned,
+                TicketStatus = TicketStatus.Assigned,
                 AssignedUserId = "user-a",
                 CreatedByUserId = "admin-user",
                 CreatedAt = DateTime.UtcNow
@@ -65,7 +65,7 @@ namespace TicketManager.Tests
                 Description = "Desc",
                 CustomerName = "Ali",
                 CustomerEmail = "ali@ornek.com",
-                Status = TicketStatus.Assigned,
+                TicketStatus = TicketStatus.Assigned,
                 AssignedUserId = "user-a",
                 Priority = TicketPriority.Normal,
                 CreatedByUserId = "admin-user",
@@ -100,7 +100,7 @@ namespace TicketManager.Tests
                 Description = "Desc",
                 CustomerName = "Ali",
                 CustomerEmail = "ali@ornek.com",
-                Status = TicketStatus.New,
+                TicketStatus = TicketStatus.New,
                 CreatedByUserId = "admin-user",
                 CreatedAt = DateTime.UtcNow
             });
@@ -126,7 +126,7 @@ namespace TicketManager.Tests
                     Description = "Desc",
                     CustomerName = "Ali",
                     CustomerEmail = "ali@ornek.com",
-                    Status = TicketStatus.Assigned,
+                    TicketStatus = TicketStatus.Assigned,
                     AssignedUserId = "user-a",
                     CreatedByUserId = "admin-user",
                     CreatedAt = DateTime.UtcNow
@@ -138,7 +138,7 @@ namespace TicketManager.Tests
                     Description = "Desc",
                     CustomerName = "Veli",
                     CustomerEmail = "veli@ornek.com",
-                    Status = TicketStatus.Assigned,
+                    TicketStatus = TicketStatus.Assigned,
                     AssignedUserId = "user-b",
                     CreatedByUserId = "admin-user",
                     CreatedAt = DateTime.UtcNow.AddMinutes(-1)
@@ -150,7 +150,7 @@ namespace TicketManager.Tests
             // Query'den assignedUserId=user-b gelse bile restriction user-a'yı zorlar.
             var (items, totalCount, _, _) = await service.GetListAsync(
                 search: null,
-                status: null,
+                ticketStatus: null,
                 priority: null,
                 assignedUserId: "user-b",
                 page: 1,
@@ -184,7 +184,7 @@ namespace TicketManager.Tests
                 Description = "Desc",
                 CustomerName = "Ali",
                 CustomerEmail = "ali@ornek.com",
-                Status = TicketStatus.New,
+                TicketStatus = TicketStatus.New,
                 CreatedByUserId = "admin-user",
                 CreatedAt = DateTime.UtcNow
             });

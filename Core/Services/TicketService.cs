@@ -10,12 +10,14 @@ namespace TicketManager.Services
     {
         Task<(IReadOnlyList<Ticket> Items, int TotalCount, int Page, int PageSize)> GetListAsync(
             string? search,
-            TicketStatus? status,
+            TicketStatus? ticketStatus,
             TicketPriority? priority,
             string? assignedUserId,
             int page,
             int pageSize,
-            string? employeeIdForRestriction);
+            string? employeeIdForRestriction,
+            TicketSortBy sort = TicketSortBy.CreatedAt,
+            SortDirection direction = SortDirection.Desc);
 
         Task<Ticket?> GetByIdAsync(int id, string? employeeIdForRestriction);
 
@@ -61,12 +63,14 @@ namespace TicketManager.Services
 
         public async Task<(IReadOnlyList<Ticket> Items, int TotalCount, int Page, int PageSize)> GetListAsync(
             string? search,
-            TicketStatus? status,
+            TicketStatus? ticketStatus,
             TicketPriority? priority,
             string? assignedUserId,
             int page,
             int pageSize,
-            string? employeeIdForRestriction)
+            string? employeeIdForRestriction,
+            TicketSortBy sort = TicketSortBy.CreatedAt,
+            SortDirection direction = SortDirection.Desc)
         {
             page = page < 1 ? 1 : page;
             pageSize = pageSize < 1 ? 20 : Math.Min(pageSize, 100);
@@ -76,7 +80,12 @@ namespace TicketManager.Services
             if (!string.IsNullOrWhiteSpace(employeeIdForRestriction)) // JWT
                 tickets = tickets.Where(t => t.AssignedUserId == employeeIdForRestriction);
             else if (!string.IsNullOrWhiteSpace(assignedUserId)) // Parametre
-                tickets = tickets.Where(x => x.AssignedUserId == assignedUserId);
+            {
+                if (string.Equals(assignedUserId, "__unassigned__", StringComparison.Ordinal))
+                    tickets = tickets.Where(x => x.AssignedUserId == null || x.AssignedUserId == "");
+                else
+                    tickets = tickets.Where(x => x.AssignedUserId == assignedUserId);
+            }
 
             if (!string.IsNullOrWhiteSpace(search))
             {
@@ -86,15 +95,41 @@ namespace TicketManager.Services
                     x.Title.Contains(term));
             }
 
-            if (status.HasValue)
-                tickets = tickets.Where(x => x.Status == status.Value);
+            if (ticketStatus.HasValue)
+                tickets = tickets.Where(x => x.TicketStatus == ticketStatus.Value);
 
             if (priority.HasValue)
                 tickets = tickets.Where(x => x.Priority == priority.Value);
 
             var totalCount = await tickets.CountAsync();
-            var items = await tickets
-                .OrderByDescending(x => x.CreatedAt)
+
+            var asc = direction == SortDirection.Asc;
+            IOrderedQueryable<Ticket> ordered = sort switch
+            {
+                TicketSortBy.TicketNumber => asc
+                    ? tickets.OrderBy(x => x.TicketNumber)
+                    : tickets.OrderByDescending(x => x.TicketNumber),
+                TicketSortBy.Title => asc
+                    ? tickets.OrderBy(x => x.Title)
+                    : tickets.OrderByDescending(x => x.Title),
+                TicketSortBy.CustomerName => asc
+                    ? tickets.OrderBy(x => x.CustomerName)
+                    : tickets.OrderByDescending(x => x.CustomerName),
+                TicketSortBy.TicketStatus => asc
+                    ? tickets.OrderBy(x => x.TicketStatus)
+                    : tickets.OrderByDescending(x => x.TicketStatus),
+                TicketSortBy.Priority => asc
+                    ? tickets.OrderBy(x => x.Priority)
+                    : tickets.OrderByDescending(x => x.Priority),
+                TicketSortBy.AssignedUserId => asc
+                    ? tickets.OrderBy(x => x.AssignedUserId)
+                    : tickets.OrderByDescending(x => x.AssignedUserId),
+                _ => asc
+                    ? tickets.OrderBy(x => x.CreatedAt)
+                    : tickets.OrderByDescending(x => x.CreatedAt)
+            };
+
+            var items = await ordered
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
@@ -151,7 +186,8 @@ namespace TicketManager.Services
                     CustomerName = customerName.Trim(),
                     CustomerEmail = customerEmail.Trim(),
                     Priority = priority,
-                    Status = assignee == null ? TicketStatus.New : TicketStatus.Assigned,
+                    TicketStatus = assignee == null ? TicketStatus.New : TicketStatus.Assigned,
+                    Status = Status.Active,
                     AssignedUserId = assignee,
                     CreatedByUserId = createdByUserId.Trim(),
                     CreatedAt = DateTime.UtcNow
@@ -206,7 +242,18 @@ namespace TicketManager.Services
         {
             var ticket = await GetTrackedTicket(id);
             TicketStateMachine.EnsureCanModify(ticket);
-            _db.Tickets.Remove(ticket);
+
+            ticket.Status = Status.Deleted;
+            ticket.UpdatedAt = DateTime.UtcNow;
+
+            var notes = await _db.TicketNotes.Where(n => n.TicketId == id).ToListAsync();
+            foreach (var note in notes)
+                note.Status = Status.Deleted;
+
+            var histories = await _db.TicketHistories.Where(h => h.TicketId == id).ToListAsync();
+            foreach (var history in histories)
+                history.Status = Status.Deleted;
+
             await _db.SaveChangesAsync();
         }
 
@@ -217,12 +264,12 @@ namespace TicketManager.Services
             if (!isAdmin)
                 TicketStateMachine.EnsureAssigneeCanUpdate(ticket, actingUserId);
 
-            TicketStateMachine.EnsureTransition(ticket.Status, newStatus);
+            TicketStateMachine.EnsureTransition(ticket, newStatus);
 
-            var oldStatus = ticket.Status;
-            ticket.Status = newStatus;
+            var oldStatus = ticket.TicketStatus;
+            ticket.TicketStatus = newStatus;
             ticket.UpdatedAt = DateTime.UtcNow;
-            AddHistory(ticket.Id, "StatusChanged", "Status", oldStatus.ToString(), newStatus.ToString(), actingUserId);
+            AddHistory(ticket.Id, "StatusChanged", "TicketStatus", oldStatus.ToString(), newStatus.ToString(), actingUserId);
             await _db.SaveChangesAsync();
             return ticket;
         }
@@ -263,13 +310,13 @@ namespace TicketManager.Services
                 AddHistory(ticket.Id, "Assigned", "AssignedUserId", oldAssignee, ticket.AssignedUserId, actingUserId);
             }
 
-            if (ticket.Status == TicketStatus.New && !string.IsNullOrWhiteSpace(ticket.AssignedUserId))
+            if (ticket.TicketStatus == TicketStatus.New && !string.IsNullOrWhiteSpace(ticket.AssignedUserId))
             {
-                TicketStateMachine.EnsureTransition(ticket.Status, TicketStatus.Assigned);
-                var oldStatus = ticket.Status;
-                ticket.Status = TicketStatus.Assigned;
+                TicketStateMachine.EnsureTransition(ticket.TicketStatus, TicketStatus.Assigned);
+                var oldStatus = ticket.TicketStatus;
+                ticket.TicketStatus = TicketStatus.Assigned;
                 ticket.UpdatedAt = DateTime.UtcNow;
-                AddHistory(ticket.Id, "StatusChanged", "Status", oldStatus.ToString(), TicketStatus.Assigned.ToString(), actingUserId);
+                AddHistory(ticket.Id, "StatusChanged", "TicketStatus", oldStatus.ToString(), TicketStatus.Assigned.ToString(), actingUserId);
             }
 
             await _db.SaveChangesAsync();
@@ -291,7 +338,8 @@ namespace TicketManager.Services
                 TicketId = ticketId,
                 NoteText = noteText.Trim(),
                 CreatedByUserId = actingUserId,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.UtcNow,
+                Status = Status.Active
             };
 
             _db.TicketNotes.Add(note);
@@ -309,10 +357,10 @@ namespace TicketManager.Services
             // Bu işlemler ileride db'ye yaptırılabilir veya günlük adetleri kayıt eden bir reporter eklenebilir.
             var total = await tickets.CountAsync();
             var open = await tickets.CountAsync(t =>
-                t.Status != TicketStatus.Resolved && t.Status != TicketStatus.Closed);
+                t.TicketStatus != TicketStatus.Resolved && t.TicketStatus != TicketStatus.Closed);
             var critical = await tickets.CountAsync(t => t.Priority == TicketPriority.Critical);
-            var resolved = await tickets.CountAsync(t => t.Status == TicketStatus.Resolved);
-            var closed = await tickets.CountAsync(t => t.Status == TicketStatus.Closed);
+            var resolved = await tickets.CountAsync(t => t.TicketStatus == TicketStatus.Resolved);
+            var closed = await tickets.CountAsync(t => t.TicketStatus == TicketStatus.Closed);
 
             return new TicketSummaryDto
             {
@@ -361,7 +409,8 @@ namespace TicketManager.Services
                 OldValue = oldValue,
                 NewValue = newValue,
                 ChangedByUserId = changedByUserId,
-                ChangedAt = DateTime.UtcNow
+                ChangedAt = DateTime.UtcNow,
+                Status = Status.Active
             });
         }
     }

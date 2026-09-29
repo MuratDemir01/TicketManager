@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using TicketManager.Entities;
+using TicketManager.Enums;
 
 namespace TicketManager.Data.Configurations
 {
@@ -15,6 +16,7 @@ namespace TicketManager.Data.Configurations
             builder.Property(x => x.OldValue).HasMaxLength(500);
             builder.Property(x => x.NewValue).HasMaxLength(500);
             builder.Property(x => x.ChangedByUserId).HasMaxLength(100).IsRequired().HasDefaultValue("");
+            builder.Property(x => x.Status).HasDefaultValue(Status.Active);
 
             builder.HasOne(x => x.Ticket)
                 .WithMany(x => x.Histories)

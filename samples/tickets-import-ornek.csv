@@ -1,0 +1,5 @@
+Title,Description,CustomerName,CustomerEmail,Priority,AssignedUserId
+Şifre sıfırlama maili gelmiyor,Kullanıcı şifremi unuttum dediğinde e-posta kutusu boş kalıyor.,Ali Vural,ali.vural@ornek.com,High,emp-mehmet
+Mobil uygulama çöküyor,iOS 17'de talep listesi açılınca uygulama kapanıyor.,Selin Aksoy,selin.aksoy@ornek.com,Critical,emp-ayse
+Fatura adresi güncellenemiyor,Profil sayfasında adres kaydet butonu tepki vermiyor.,Deniz Yıldız,deniz.yildiz@ornek.com,Normal,
+Rapor Excel dışa aktarım yavaş,Son 1 yıl filtresinde dışa aktarım 2 dakikayı aşıyor.,Burcu Kurt,burcu.kurt@ornek.com,Low,emp-can

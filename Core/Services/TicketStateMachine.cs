@@ -19,7 +19,7 @@ namespace TicketManager.Services
 
         public static void EnsureCanModify(Ticket ticket)
         {
-            if (ticket.Status == TicketStatus.Closed)
+            if (ticket.TicketStatus == TicketStatus.Closed)
                 throw new InvalidOperationException("Closed talep değiştirilemez.");
         }
 
@@ -30,6 +30,15 @@ namespace TicketManager.Services
 
             if (!Allowed.TryGetValue(from, out var nextStates) || !nextStates.Contains(to))
                 throw new InvalidOperationException($"Geçersiz durum geçişi: {from} -> {to}");
+        }
+
+        public static void EnsureTransition(Ticket ticket, TicketStatus to)
+        {
+            EnsureTransition(ticket.TicketStatus, to);
+
+            if (to == TicketStatus.Assigned && string.IsNullOrWhiteSpace(ticket.AssignedUserId))
+                throw new InvalidOperationException(
+                    "Assigned durumu için talep bir çalışana atanmış olmalı.");
         }
 
         // Çalışan kendi atanmadığı talebe dokunamasın. Admin bu metodu çağırmaz.

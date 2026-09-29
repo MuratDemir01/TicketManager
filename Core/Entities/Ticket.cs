@@ -11,7 +11,8 @@ namespace TicketManager.Entities
         public string CustomerName { get; set; } = null!;
         public string CustomerEmail { get; set; } = null!;
         public TicketPriority Priority { get; set; }
-        public TicketStatus Status { get; set; }
+        public TicketStatus TicketStatus { get; set; }
+        public Status Status { get; set; } = Status.Active;
         public string? AssignedUserId { get; set; }
         public string? CreatedByUserId { get; set; }
         public DateTime CreatedAt { get; set; }

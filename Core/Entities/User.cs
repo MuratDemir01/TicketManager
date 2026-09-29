@@ -9,5 +9,6 @@ namespace TicketManager.Entities
         public string Email { get; set; } = null!;
         public string PasswordHash { get; set; } = null!;
         public UserRole Role { get; set; }
+        public Status Status { get; set; } = Status.Active;
     }
 }

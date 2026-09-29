@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -53,14 +54,34 @@ builder.Services
     });
 
 builder.Services.AddAuthorization();
-builder.Services.AddControllers();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Dashboard", policy =>
+        policy.WithOrigins("http://localhost:5173", "http://127.0.0.1:5173")
+            .AllowAnyHeader()
+            .AllowAnyMethod());
+});
+builder.Services.AddControllers()
+    .AddJsonOptions(o =>
+    {
+        // Enum'ı ToString yapmak gerekmesin veya string'e ToEnum metodu yazmamız gerekmesin diye 
+        o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "TicketManager API", Version = "v1" });
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "TicketManager API",
+        Version = "v1",
+        Description =
+            "Müşteri talep yönetim API'si. Önce login olmanız gerekir.\n\n" +
+            "Roller: Admin (tüm talepler, kullanıcılar), Employee (yalnız atandığı talepler)."
+    });
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Description = "Login'den gelen JWT token'ı yapıştır (Bearer yazmana gerek yok).",
+        Description =
+            "JWT Bearer. Authorize kutusuna yalnızca token yapıştırın (\"Bearer: \" otomatik eklenir).",
         Name = "Authorization",
         In = ParameterLocation.Header,
         Type = SecuritySchemeType.Http,
@@ -98,10 +119,17 @@ using (var scope = app.Services.CreateScope())
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(o =>
+    {
+        o.DocumentTitle = "TicketManager API";
+        o.SwaggerEndpoint("/swagger/v1/swagger.json", "TicketManager v1");
+        o.DisplayRequestDuration();
+        o.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.List);
+    });
 }
 
 app.UseHttpsRedirection();
+app.UseCors("Dashboard");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

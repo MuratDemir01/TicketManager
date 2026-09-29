@@ -1,3 +1,5 @@
+using TicketManager.Enums;
+
 namespace TicketManager.Entities
 {
     public class TicketNote
@@ -7,6 +9,7 @@ namespace TicketManager.Entities
         public string NoteText { get; set; } = null!;
         public string CreatedByUserId { get; set; } = null!;
         public DateTime CreatedAt { get; set; }
+        public Status Status { get; set; } = Status.Active;
 
         public Ticket Ticket { get; set; } = null!;
     }

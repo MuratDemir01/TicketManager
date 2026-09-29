@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using TicketManager.Entities;
+using TicketManager.Enums;
 
 namespace TicketManager.Data
 {
@@ -21,6 +22,12 @@ namespace TicketManager.Data
             // Bu assembly'deki IEntityTypeConfiguration<> sınıflarını bulup tek tek ApplyConfiguration yazmama gerek kalmadan yükler. 
             // TicketConfiguration vs. ekleyince burayı elle güncellememe gerek kalmaz.
             builder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+
+            // Deleted kayıtlar varsayılan sorgularda görünmez.
+            builder.Entity<Ticket>().HasQueryFilter(t => t.Status != Status.Deleted);
+            builder.Entity<TicketNote>().HasQueryFilter(n => n.Status != Status.Deleted);
+            builder.Entity<TicketHistory>().HasQueryFilter(h => h.Status != Status.Deleted);
+            builder.Entity<User>().HasQueryFilter(u => u.Status != Status.Deleted);
         }
     }
 }

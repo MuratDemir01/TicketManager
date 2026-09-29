@@ -29,7 +29,9 @@ namespace TicketManager.Services
                 var year = DateTime.UtcNow.Year;
                 var prefix = $"REQ-{year}-";
 
+                // Soft-delete filtreli satırlar unique index'te durur; numarayı onların da üstünden üret.
                 var lastNumber = await _db.Tickets
+                    .IgnoreQueryFilters()
                     .Where(x => x.TicketNumber.StartsWith(prefix))
                     .OrderByDescending(x => x.TicketNumber)
                     .Select(x => x.TicketNumber)
