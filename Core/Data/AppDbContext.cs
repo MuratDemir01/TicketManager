@@ -13,6 +13,7 @@ namespace TicketManager.Data
         public DbSet<Ticket> Tickets { get; set; }
         public DbSet<TicketNote> TicketNotes { get; set; }
         public DbSet<TicketHistory> TicketHistories { get; set; }
+        public DbSet<User> Users { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {

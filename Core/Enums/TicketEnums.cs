@@ -17,4 +17,10 @@ namespace TicketManager.Enums
         High = 2,
         Critical = 3
     }
+
+    public enum UserRole
+    {
+        Admin = 0,
+        Employee = 1
+    }
 }

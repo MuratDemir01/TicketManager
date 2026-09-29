@@ -1,10 +1,53 @@
 using Microsoft.EntityFrameworkCore;
 using TicketManager.Data;
+using TicketManager.Dtos;
 using TicketManager.Entities;
 using TicketManager.Enums;
 
 namespace TicketManager.Services
 {
+    public interface ITicketService
+    {
+        Task<(IReadOnlyList<Ticket> Items, int TotalCount, int Page, int PageSize)> GetListAsync(
+            string? search,
+            TicketStatus? status,
+            TicketPriority? priority,
+            string? assignedUserId,
+            int page,
+            int pageSize,
+            string? employeeIdForRestriction);
+
+        Task<Ticket?> GetByIdAsync(int id, string? employeeIdForRestriction);
+
+        Task<Ticket> CreateAsync(
+            string title,
+            string description,
+            string customerName,
+            string customerEmail,
+            TicketPriority priority,
+            string createdByUserId,
+            string? assignedUserId);
+
+        Task<Ticket> UpdateAsync(
+            int id,
+            string title,
+            string description,
+            string customerName,
+            string customerEmail);
+
+        Task DeleteAsync(int id);
+
+        Task<Ticket> ChangeStatusAsync(int id, TicketStatus newStatus, string actingUserId, bool isAdmin);
+
+        Task<Ticket> ChangePriorityAsync(int id, TicketPriority priority, string actingUserId);
+
+        Task<Ticket> AssignAsync(int id, string? assignedUserId, string actingUserId);
+
+        Task<TicketNote> AddNoteAsync(int ticketId, string noteText, string actingUserId, bool isAdmin);
+
+        Task<TicketSummaryDto> GetSummaryAsync(string? employeeIdForRestriction);
+    }
+
     public class TicketService : ITicketService
     {
         private readonly AppDbContext _db;
@@ -21,13 +64,19 @@ namespace TicketManager.Services
             TicketStatus? status,
             TicketPriority? priority,
             string? assignedUserId,
-            int page = 1,
-            int pageSize = 20)
+            int page,
+            int pageSize,
+            string? employeeIdForRestriction)
         {
             page = page < 1 ? 1 : page;
             pageSize = pageSize < 1 ? 20 : Math.Min(pageSize, 100);
 
             IQueryable<Ticket> tickets = _db.Tickets.AsNoTracking();
+
+            if (!string.IsNullOrWhiteSpace(employeeIdForRestriction)) // JWT
+                tickets = tickets.Where(t => t.AssignedUserId == employeeIdForRestriction);
+            else if (!string.IsNullOrWhiteSpace(assignedUserId)) // Parametre
+                tickets = tickets.Where(x => x.AssignedUserId == assignedUserId);
 
             if (!string.IsNullOrWhiteSpace(search))
             {
@@ -43,9 +92,6 @@ namespace TicketManager.Services
             if (priority.HasValue)
                 tickets = tickets.Where(x => x.Priority == priority.Value);
 
-            if (!string.IsNullOrWhiteSpace(assignedUserId))
-                tickets = tickets.Where(x => x.AssignedUserId == assignedUserId);
-
             var totalCount = await tickets.CountAsync();
             var items = await tickets
                 .OrderByDescending(x => x.CreatedAt)
@@ -56,9 +102,24 @@ namespace TicketManager.Services
             return (items, totalCount, page, pageSize);
         }
 
-        public async Task<Ticket?> GetByIdAsync(int id)
+        public async Task<Ticket?> GetByIdAsync(int id, string? employeeIdForRestriction)
         {
-            return await _db.Tickets.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+            var query = _db.Tickets
+                .AsNoTracking()
+                .Include(t => t.Notes)
+                .Include(t => t.Histories)
+                .Where(x => x.Id == id);
+
+            if (!string.IsNullOrWhiteSpace(employeeIdForRestriction))
+                query = query.Where(t => t.AssignedUserId == employeeIdForRestriction);
+
+            var ticket = await query.FirstOrDefaultAsync();
+            if (ticket == null)
+                return null;
+
+            ticket.Notes = ticket.Notes.OrderBy(n => n.CreatedAt).ToList();
+            ticket.Histories = ticket.Histories.OrderBy(h => h.ChangedAt).ToList();
+            return ticket;
         }
 
         public async Task<Ticket> CreateAsync(
@@ -66,8 +127,20 @@ namespace TicketManager.Services
             string description,
             string customerName,
             string customerEmail,
-            TicketPriority priority)
+            TicketPriority priority,
+            string createdByUserId,
+            string? assignedUserId)
         {
+            if (string.IsNullOrWhiteSpace(createdByUserId))
+                throw new InvalidOperationException("Oluşturan kullanıcı zorunlu.");
+
+            if (!Enum.IsDefined(typeof(TicketPriority), priority))
+                throw new InvalidOperationException("Geçersiz öncelik.");
+
+            string? assignee = null;
+            if (!string.IsNullOrWhiteSpace(assignedUserId))
+                assignee = await EnsureEmployeeAsync(assignedUserId);
+
             for (var attempt = 0; attempt < 3; attempt++)
             {
                 var ticket = new Ticket
@@ -78,7 +151,9 @@ namespace TicketManager.Services
                     CustomerName = customerName.Trim(),
                     CustomerEmail = customerEmail.Trim(),
                     Priority = priority,
-                    Status = TicketStatus.New,
+                    Status = assignee == null ? TicketStatus.New : TicketStatus.Assigned,
+                    AssignedUserId = assignee,
+                    CreatedByUserId = createdByUserId.Trim(),
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -88,12 +163,16 @@ namespace TicketManager.Services
                 {
                     // Önce ticket, sonra history ekliyoruz ki ticket id'si history'de de kullanılabilir olsun. 
                     await _db.SaveChangesAsync();
-                    AddHistory(ticket.Id, "Created", "Ticket", null, ticket.TicketNumber);
+
+                    AddHistory(ticket.Id, "Created", "Ticket", null, ticket.TicketNumber, createdByUserId);
+                    if (assignee != null)
+                        AddHistory(ticket.Id, "Assigned", "AssignedUserId", null, assignee, createdByUserId);
+
                     await _db.SaveChangesAsync();
                     return ticket;
                 }
                 // Unique çakışırsa numarayı yeniden üretip tekrar deniyoruz.
-                catch (DbUpdateException) when (attempt < 2)
+                catch (DbUpdateException)
                 {
                     // Transaction tamamlanmaz, bir noktada hata alırsa tüm db süreci geri alınıyor.
                     _db.ChangeTracker.Clear();
@@ -108,8 +187,7 @@ namespace TicketManager.Services
             string title,
             string description,
             string customerName,
-            string customerEmail,
-            TicketPriority priority)
+            string customerEmail)
         {
             var ticket = await GetTrackedTicket(id);
             TicketStateMachine.EnsureCanModify(ticket);
@@ -119,13 +197,6 @@ namespace TicketManager.Services
             ticket.CustomerName = customerName.Trim();
             ticket.CustomerEmail = customerEmail.Trim();
             ticket.UpdatedAt = DateTime.UtcNow;
-
-            if (ticket.Priority != priority)
-            {
-                var oldPriority = ticket.Priority;
-                ticket.Priority = priority;
-                AddHistory(ticket.Id, "PriorityChanged", "Priority", oldPriority.ToString(), priority.ToString());
-            }
 
             await _db.SaveChangesAsync();
             return ticket;
@@ -139,33 +210,57 @@ namespace TicketManager.Services
             await _db.SaveChangesAsync();
         }
 
-        public async Task<Ticket> ChangeStatusAsync(int id, TicketStatus newStatus)
+        public async Task<Ticket> ChangeStatusAsync(int id, TicketStatus newStatus, string actingUserId, bool isAdmin)
         {
             var ticket = await GetTrackedTicket(id);
             TicketStateMachine.EnsureCanModify(ticket);
+            if (!isAdmin)
+                TicketStateMachine.EnsureAssigneeCanUpdate(ticket, actingUserId);
+
             TicketStateMachine.EnsureTransition(ticket.Status, newStatus);
 
             var oldStatus = ticket.Status;
             ticket.Status = newStatus;
             ticket.UpdatedAt = DateTime.UtcNow;
-            AddHistory(ticket.Id, "StatusChanged", "Status", oldStatus.ToString(), newStatus.ToString());
+            AddHistory(ticket.Id, "StatusChanged", "Status", oldStatus.ToString(), newStatus.ToString(), actingUserId);
             await _db.SaveChangesAsync();
             return ticket;
         }
 
-        public async Task<Ticket> AssignAsync(int id, string? assignedUserId)
+        public async Task<Ticket> ChangePriorityAsync(int id, TicketPriority priority, string actingUserId)
+        {
+            if (!Enum.IsDefined(typeof(TicketPriority), priority))
+                throw new InvalidOperationException("Geçersiz öncelik.");
+
+            var ticket = await GetTrackedTicket(id);
+            TicketStateMachine.EnsureCanModify(ticket);
+
+            if (ticket.Priority == priority)
+                return ticket;
+
+            var oldPriority = ticket.Priority;
+            ticket.Priority = priority;
+            ticket.UpdatedAt = DateTime.UtcNow;
+            AddHistory(ticket.Id, "PriorityChanged", "Priority", oldPriority.ToString(), priority.ToString(), actingUserId);
+            await _db.SaveChangesAsync();
+            return ticket;
+        }
+
+        public async Task<Ticket> AssignAsync(int id, string? assignedUserId, string actingUserId)
         {
             var ticket = await GetTrackedTicket(id);
             TicketStateMachine.EnsureCanModify(ticket);
 
             var oldAssignee = ticket.AssignedUserId;
-            var normalized = string.IsNullOrWhiteSpace(assignedUserId) ? null : assignedUserId.Trim();
+            string? normalized = null;
+            if (!string.IsNullOrWhiteSpace(assignedUserId))
+                normalized = await EnsureEmployeeAsync(assignedUserId);
 
             if (oldAssignee != normalized)
             {
                 ticket.AssignedUserId = normalized;
                 ticket.UpdatedAt = DateTime.UtcNow;
-                AddHistory(ticket.Id, "Assigned", "AssignedUserId", oldAssignee, ticket.AssignedUserId);
+                AddHistory(ticket.Id, "Assigned", "AssignedUserId", oldAssignee, ticket.AssignedUserId, actingUserId);
             }
 
             if (ticket.Status == TicketStatus.New && !string.IsNullOrWhiteSpace(ticket.AssignedUserId))
@@ -174,25 +269,28 @@ namespace TicketManager.Services
                 var oldStatus = ticket.Status;
                 ticket.Status = TicketStatus.Assigned;
                 ticket.UpdatedAt = DateTime.UtcNow;
-                AddHistory(ticket.Id, "StatusChanged", "Status", oldStatus.ToString(), TicketStatus.Assigned.ToString());
+                AddHistory(ticket.Id, "StatusChanged", "Status", oldStatus.ToString(), TicketStatus.Assigned.ToString(), actingUserId);
             }
 
             await _db.SaveChangesAsync();
             return ticket;
         }
 
-        public async Task<TicketNote> AddNoteAsync(int ticketId, string noteText)
+        public async Task<TicketNote> AddNoteAsync(int ticketId, string noteText, string actingUserId, bool isAdmin)
         {
             if (string.IsNullOrWhiteSpace(noteText))
                 throw new InvalidOperationException("Not boş olamaz.");
 
             var ticket = await GetTrackedTicket(ticketId);
             TicketStateMachine.EnsureCanModify(ticket);
+            if (!isAdmin)
+                TicketStateMachine.EnsureAssigneeCanUpdate(ticket, actingUserId);
 
             var note = new TicketNote
             {
                 TicketId = ticketId,
                 NoteText = noteText.Trim(),
+                CreatedByUserId = actingUserId,
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -200,6 +298,43 @@ namespace TicketManager.Services
             ticket.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
             return note;
+        }
+
+        public async Task<TicketSummaryDto> GetSummaryAsync(string? employeeIdForRestriction)
+        {
+            IQueryable<Ticket> tickets = _db.Tickets.AsNoTracking();
+            if (!string.IsNullOrWhiteSpace(employeeIdForRestriction))
+                tickets = tickets.Where(t => t.AssignedUserId == employeeIdForRestriction);
+
+            // Bu işlemler ileride db'ye yaptırılabilir veya günlük adetleri kayıt eden bir reporter eklenebilir.
+            var total = await tickets.CountAsync();
+            var open = await tickets.CountAsync(t =>
+                t.Status != TicketStatus.Resolved && t.Status != TicketStatus.Closed);
+            var critical = await tickets.CountAsync(t => t.Priority == TicketPriority.Critical);
+            var resolved = await tickets.CountAsync(t => t.Status == TicketStatus.Resolved);
+            var closed = await tickets.CountAsync(t => t.Status == TicketStatus.Closed);
+
+            return new TicketSummaryDto
+            {
+                Total = total,
+                Open = open,
+                Critical = critical,
+                Resolved = resolved,
+                Closed = closed
+            };
+        }
+
+        private async Task<string> EnsureEmployeeAsync(string userId)
+        {
+            var id = userId.Trim();
+            var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == id);
+            if (user == null)
+                throw new InvalidOperationException("Atanacak kullanıcı bulunamadı.");
+
+            if (user.Role != UserRole.Employee)
+                throw new InvalidOperationException("Atanacak kullanıcı Employee rolünde olmalı.");
+
+            return id;
         }
 
         private async Task<Ticket> GetTrackedTicket(int id)
@@ -210,7 +345,13 @@ namespace TicketManager.Services
             return ticket;
         }
 
-        private void AddHistory(int ticketId, string action, string fieldName, string? oldValue, string? newValue)
+        private void AddHistory(
+            int ticketId,
+            string action,
+            string fieldName,
+            string? oldValue,
+            string? newValue,
+            string changedByUserId)
         {
             _db.TicketHistories.Add(new TicketHistory
             {
@@ -219,6 +360,7 @@ namespace TicketManager.Services
                 FieldName = fieldName,
                 OldValue = oldValue,
                 NewValue = newValue,
+                ChangedByUserId = changedByUserId,
                 ChangedAt = DateTime.UtcNow
             });
         }

@@ -14,6 +14,7 @@ namespace TicketManager.Data.Configurations
             builder.Property(x => x.FieldName).HasMaxLength(100).IsRequired();
             builder.Property(x => x.OldValue).HasMaxLength(500);
             builder.Property(x => x.NewValue).HasMaxLength(500);
+            builder.Property(x => x.ChangedByUserId).HasMaxLength(100).IsRequired().HasDefaultValue("");
 
             builder.HasOne(x => x.Ticket)
                 .WithMany(x => x.Histories)

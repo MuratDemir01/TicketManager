@@ -12,7 +12,7 @@ namespace TicketManager.Services
             [TicketStatus.New] = new[] { TicketStatus.Assigned },
             [TicketStatus.Assigned] = new[] { TicketStatus.InProgress },
             [TicketStatus.InProgress] = new[] { TicketStatus.OnHold, TicketStatus.Resolved },
-            [TicketStatus.OnHold] = new[] { TicketStatus.Closed },
+            [TicketStatus.OnHold] = new[] { TicketStatus.InProgress, TicketStatus.Resolved },
             [TicketStatus.Resolved] = new[] { TicketStatus.Closed },
             [TicketStatus.Closed] = Array.Empty<TicketStatus>()
         };
@@ -30,6 +30,18 @@ namespace TicketManager.Services
 
             if (!Allowed.TryGetValue(from, out var nextStates) || !nextStates.Contains(to))
                 throw new InvalidOperationException($"Geçersiz durum geçişi: {from} -> {to}");
+        }
+
+        // Çalışan kendi atanmadığı talebe dokunamasın. Admin bu metodu çağırmaz.
+        public static void EnsureAssigneeCanUpdate(Ticket ticket, string? actingUserId)
+        {
+            if (string.IsNullOrWhiteSpace(actingUserId) ||
+                string.IsNullOrWhiteSpace(ticket.AssignedUserId) ||
+                !string.Equals(ticket.AssignedUserId.Trim(), actingUserId.Trim(), StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Bu talep size atanmamış, işlem yapamazsınız.");
+            }
         }
     }
 }

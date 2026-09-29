@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TicketManager.Data;
 
@@ -10,9 +11,11 @@ using TicketManager.Data;
 namespace TicketManager.Core.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260929070851_AddUsers")]
+    partial class AddUsers
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.11");
@@ -28,10 +31,6 @@ namespace TicketManager.Core.Data.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CreatedByUserId")
-                        .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("CustomerEmail")
@@ -89,13 +88,6 @@ namespace TicketManager.Core.Data.Migrations
                     b.Property<DateTime>("ChangedAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("ChangedByUserId")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT")
-                        .HasDefaultValue("");
-
                     b.Property<string>("FieldName")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -127,13 +119,6 @@ namespace TicketManager.Core.Data.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
-
-                    b.Property<string>("CreatedByUserId")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT")
-                        .HasDefaultValue("");
 
                     b.Property<string>("NoteText")
                         .IsRequired()

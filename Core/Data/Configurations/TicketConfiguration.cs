@@ -19,6 +19,7 @@ namespace TicketManager.Data.Configurations
             builder.Property(x => x.CustomerName).HasMaxLength(150).IsRequired();
             builder.Property(x => x.CustomerEmail).HasMaxLength(256).IsRequired();
             builder.Property(x => x.AssignedUserId).HasMaxLength(100);
+            builder.Property(x => x.CreatedByUserId).HasMaxLength(100);
         }
     }
 }

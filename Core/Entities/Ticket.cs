@@ -13,6 +13,7 @@ namespace TicketManager.Entities
         public TicketPriority Priority { get; set; }
         public TicketStatus Status { get; set; }
         public string? AssignedUserId { get; set; }
+        public string? CreatedByUserId { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
 

@@ -8,6 +8,7 @@ namespace TicketManager.Entities
         public string FieldName { get; set; } = null!;
         public string? OldValue { get; set; }
         public string? NewValue { get; set; }
+        public string ChangedByUserId { get; set; } = null!;
         public DateTime ChangedAt { get; set; }
 
         public Ticket Ticket { get; set; } = null!;

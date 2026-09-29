@@ -1,5 +1,9 @@
+using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TicketManager.API.Dtos;
+using TicketManager.Auth;
+using TicketManager.Dtos;
 using TicketManager.Entities;
 using TicketManager.Enums;
 using TicketManager.Services;
@@ -7,6 +11,7 @@ using TicketManager.Services;
 namespace TicketManager.API.Controllers
 {
     [ApiController]
+    [Authorize]
     [Route("api/tickets")]
     public class TicketController : ControllerBase
     {
@@ -33,31 +38,63 @@ namespace TicketManager.API.Controllers
             public TicketPriority Priority { get; set; }
             public TicketStatus Status { get; set; }
             public string? AssignedUserId { get; set; }
+            public string? CreatedByUserId { get; set; }
             public DateTime CreatedAt { get; set; }
             public DateTime? UpdatedAt { get; set; }
         }
 
+        // Ticket class'ından türediği için ticket parametrelerini içerir ama ek olarak notes ve histories alanlarını da içerir.
+        public class TicketDetailDto : TicketDto
+        {
+            public List<TicketNoteDto> Notes { get; set; } = new();
+            public List<TicketHistoryDto> Histories { get; set; } = new();
+        }
+
         public class CreateTicketDto
         {
+            [Required, MaxLength(150)]
             public string Title { get; set; } = null!;
+
+            [Required]
             public string Description { get; set; } = null!;
+
+            [Required, MaxLength(150)]
             public string CustomerName { get; set; } = null!;
+
+            [Required, EmailAddress, MaxLength(256)]
             public string CustomerEmail { get; set; } = null!;
+
+            [Required]
             public TicketPriority Priority { get; set; }
+
+            public string? AssignedUserId { get; set; }
         }
 
         public class UpdateTicketDto
         {
+            [Required, MaxLength(150)]
             public string Title { get; set; } = null!;
+
+            [Required]
             public string Description { get; set; } = null!;
+
+            [Required, MaxLength(150)]
             public string CustomerName { get; set; } = null!;
+
+            [Required, EmailAddress, MaxLength(256)]
             public string CustomerEmail { get; set; } = null!;
-            public TicketPriority Priority { get; set; }
         }
 
         public class ChangeStatusDto
         {
+            [Required]
             public TicketStatus Status { get; set; }
+        }
+
+        public class ChangePriorityDto
+        {
+            [Required]
+            public TicketPriority Priority { get; set; }
         }
 
         public class AssignTicketDto
@@ -67,6 +104,7 @@ namespace TicketManager.API.Controllers
 
         public class AddNoteDto
         {
+            [Required, MaxLength(2000)]
             public string NoteText { get; set; } = null!;
         }
 
@@ -75,7 +113,19 @@ namespace TicketManager.API.Controllers
             public int Id { get; set; }
             public int TicketId { get; set; }
             public string NoteText { get; set; } = null!;
+            public string CreatedByUserId { get; set; } = null!;
             public DateTime CreatedAt { get; set; }
+        }
+
+        public class TicketHistoryDto
+        {
+            public int Id { get; set; }
+            public string Action { get; set; } = null!;
+            public string FieldName { get; set; } = null!;
+            public string? OldValue { get; set; }
+            public string? NewValue { get; set; }
+            public string ChangedByUserId { get; set; } = null!;
+            public DateTime ChangedAt { get; set; }
         }
 
         public class TicketFilter
@@ -90,40 +140,81 @@ namespace TicketManager.API.Controllers
 
         #endregion
 
+        private string? EmployeeIdForRestriction =>
+            CurrentUser.IsAdmin(User) ? null : CurrentUser.Id(User);
+
         #region Helpers
 
-        private static TicketDto ToDto(Ticket ticket)
+        private static TicketDto ToDto(Ticket ticket) => new()
         {
-            return new TicketDto
-            {
-                Id = ticket.Id,
-                TicketNumber = ticket.TicketNumber,
-                Title = ticket.Title,
-                Description = ticket.Description,
-                CustomerName = ticket.CustomerName,
-                CustomerEmail = ticket.CustomerEmail,
-                Priority = ticket.Priority,
-                Status = ticket.Status,
-                AssignedUserId = ticket.AssignedUserId,
-                CreatedAt = ticket.CreatedAt,
-                UpdatedAt = ticket.UpdatedAt
-            };
-        }
+            Id = ticket.Id,
+            TicketNumber = ticket.TicketNumber,
+            Title = ticket.Title,
+            Description = ticket.Description,
+            CustomerName = ticket.CustomerName,
+            CustomerEmail = ticket.CustomerEmail,
+            Priority = ticket.Priority,
+            Status = ticket.Status,
+            AssignedUserId = ticket.AssignedUserId,
+            CreatedByUserId = ticket.CreatedByUserId,
+            CreatedAt = ticket.CreatedAt,
+            UpdatedAt = ticket.UpdatedAt
+        };
 
-        private static TicketNoteDto ToDto(TicketNote note)
+        private static TicketDetailDto ToDetailDto(Ticket ticket) => new()
         {
-            return new TicketNoteDto
-            {
-                Id = note.Id,
-                TicketId = note.TicketId,
-                NoteText = note.NoteText,
-                CreatedAt = note.CreatedAt
-            };
+            Id = ticket.Id,
+            TicketNumber = ticket.TicketNumber,
+            Title = ticket.Title,
+            Description = ticket.Description,
+            CustomerName = ticket.CustomerName,
+            CustomerEmail = ticket.CustomerEmail,
+            Priority = ticket.Priority,
+            Status = ticket.Status,
+            AssignedUserId = ticket.AssignedUserId,
+            CreatedByUserId = ticket.CreatedByUserId,
+            CreatedAt = ticket.CreatedAt,
+            UpdatedAt = ticket.UpdatedAt,
+            Notes = ticket.Notes
+                .OrderBy(n => n.CreatedAt)
+                .Select(ToDto)
+                .ToList(),
+            Histories = ticket.Histories
+                .OrderBy(h => h.ChangedAt)
+                .Select(h => new TicketHistoryDto
+                {
+                    Id = h.Id,
+                    Action = h.Action,
+                    FieldName = h.FieldName,
+                    OldValue = h.OldValue,
+                    NewValue = h.NewValue,
+                    ChangedByUserId = h.ChangedByUserId,
+                    ChangedAt = h.ChangedAt
+                })
+                .ToList()
+        };
+
+        private static TicketNoteDto ToDto(TicketNote note) => new()
+        {
+            Id = note.Id,
+            TicketId = note.TicketId,
+            NoteText = note.NoteText,
+            CreatedByUserId = note.CreatedByUserId,
+            CreatedAt = note.CreatedAt
+        };
+
+        [HttpGet("summary")]
+        [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Employee}")]
+        public async Task<ActionResult<TicketSummaryDto>> Summary()
+        {
+            var summary = await _tickets.GetSummaryAsync(EmployeeIdForRestriction);
+            return Ok(summary);
         }
 
         #endregion
 
         [HttpGet]
+        [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Employee}")]
         public async Task<ActionResult<PagedResult<TicketDto>>> GetAll([FromQuery] TicketFilter filter)
         {
             var (items, totalCount, page, pageSize) = await _tickets.GetListAsync(
@@ -132,7 +223,8 @@ namespace TicketManager.API.Controllers
                 filter.Priority,
                 filter.AssignedUserId,
                 filter.Page,
-                filter.PageSize);
+                filter.PageSize,
+                EmployeeIdForRestriction);
 
             return Ok(new PagedResult<TicketDto>
             {
@@ -144,130 +236,121 @@ namespace TicketManager.API.Controllers
         }
 
         [HttpGet("{id:int}")]
-        public async Task<ActionResult<TicketDto>> GetById(int id)
+        [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Employee}")]
+        public async Task<ActionResult<TicketDetailDto>> GetById(int id)
         {
-            var ticket = await _tickets.GetByIdAsync(id);
+            var ticket = await _tickets.GetByIdAsync(id, EmployeeIdForRestriction);
             if (ticket == null)
                 return NotFound();
+
+            return Ok(ToDetailDto(ticket));
+        }
+
+        [HttpPost]
+        [Authorize(Roles = AppRoles.Admin)]
+        public async Task<ActionResult<TicketDto>> Create(CreateTicketDto dto)
+        {
+            if (!ModelState.IsValid)
+                return ValidationProblem(ModelState);
+
+            if (!Enum.IsDefined(typeof(TicketPriority), dto.Priority))
+            {
+                ModelState.AddModelError(nameof(dto.Priority), "Geçersiz öncelik.");
+                return ValidationProblem(ModelState);
+            }
+
+            var ticket = await _tickets.CreateAsync(
+                dto.Title,
+                dto.Description,
+                dto.CustomerName,
+                dto.CustomerEmail,
+                dto.Priority,
+                CurrentUser.Id(User),
+                dto.AssignedUserId);
+
+            return CreatedAtAction(nameof(GetById), new { id = ticket.Id }, ToDto(ticket));
+        }
+
+        [HttpPut("{id:int}")]
+        [Authorize(Roles = AppRoles.Admin)]
+        public async Task<ActionResult<TicketDto>> Update(int id, UpdateTicketDto dto)
+        {
+            if (!ModelState.IsValid)
+                return ValidationProblem(ModelState);
+
+            var ticket = await _tickets.UpdateAsync(
+                id,
+                dto.Title,
+                dto.Description,
+                dto.CustomerName,
+                dto.CustomerEmail);
 
             return Ok(ToDto(ticket));
         }
 
-        [HttpPost]
-        public async Task<ActionResult<TicketDto>> Create(CreateTicketDto dto)
-        {
-            try
-            {
-                var ticket = await _tickets.CreateAsync(
-                    dto.Title,
-                    dto.Description,
-                    dto.CustomerName,
-                    dto.CustomerEmail,
-                    dto.Priority);
-
-                return CreatedAtAction(nameof(GetById), new { id = ticket.Id }, ToDto(ticket));
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-        }
-
-        [HttpPut("{id:int}")]
-        public async Task<ActionResult<TicketDto>> Update(int id, UpdateTicketDto dto)
-        {
-            try
-            {
-                var ticket = await _tickets.UpdateAsync(
-                    id,
-                    dto.Title,
-                    dto.Description,
-                    dto.CustomerName,
-                    dto.CustomerEmail,
-                    dto.Priority);
-
-                return Ok(ToDto(ticket));
-            }
-            catch (KeyNotFoundException)
-            {
-                return NotFound();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-        }
-
         [HttpDelete("{id:int}")]
+        [Authorize(Roles = AppRoles.Admin)]
         public async Task<IActionResult> Delete(int id)
         {
-            try
-            {
-                await _tickets.DeleteAsync(id);
-                return NoContent();
-            }
-            catch (KeyNotFoundException)
-            {
-                return NotFound();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            await _tickets.DeleteAsync(id);
+            return NoContent();
         }
 
         [HttpPost("{id:int}/status")]
+        [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Employee}")]
         public async Task<ActionResult<TicketDto>> ChangeStatus(int id, ChangeStatusDto dto)
         {
-            try
+            if (!ModelState.IsValid)
+                return ValidationProblem(ModelState);
+
+            var ticket = await _tickets.ChangeStatusAsync(
+                id,
+                dto.Status,
+                CurrentUser.Id(User),
+                CurrentUser.IsAdmin(User));
+
+            return Ok(ToDto(ticket));
+        }
+
+        [HttpPost("{id:int}/priority")]
+        [Authorize(Roles = AppRoles.Admin)]
+        public async Task<ActionResult<TicketDto>> ChangePriority(int id, ChangePriorityDto dto)
+        {
+            if (!ModelState.IsValid)
+                return ValidationProblem(ModelState);
+
+            if (!Enum.IsDefined(typeof(TicketPriority), dto.Priority))
             {
-                var ticket = await _tickets.ChangeStatusAsync(id, dto.Status);
-                return Ok(ToDto(ticket));
+                ModelState.AddModelError(nameof(dto.Priority), "Geçersiz öncelik.");
+                return ValidationProblem(ModelState);
             }
-            catch (KeyNotFoundException)
-            {
-                return NotFound();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+
+            var ticket = await _tickets.ChangePriorityAsync(id, dto.Priority, CurrentUser.Id(User));
+            return Ok(ToDto(ticket));
         }
 
         [HttpPost("{id:int}/assign")]
+        [Authorize(Roles = AppRoles.Admin)]
         public async Task<ActionResult<TicketDto>> Assign(int id, AssignTicketDto dto)
         {
-            try
-            {
-                var ticket = await _tickets.AssignAsync(id, dto.AssignedUserId);
-                return Ok(ToDto(ticket));
-            }
-            catch (KeyNotFoundException)
-            {
-                return NotFound();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            var ticket = await _tickets.AssignAsync(id, dto.AssignedUserId, CurrentUser.Id(User));
+            return Ok(ToDto(ticket));
         }
 
         [HttpPost("{id:int}/notes")]
+        [Authorize(Roles = $"{AppRoles.Admin},{AppRoles.Employee}")]
         public async Task<ActionResult<TicketNoteDto>> AddNote(int id, AddNoteDto dto)
         {
-            try
-            {
-                var note = await _tickets.AddNoteAsync(id, dto.NoteText);
-                return Ok(ToDto(note));
-            }
-            catch (KeyNotFoundException)
-            {
-                return NotFound();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            if (!ModelState.IsValid)
+                return ValidationProblem(ModelState);
+
+            var note = await _tickets.AddNoteAsync(
+                id,
+                dto.NoteText,
+                CurrentUser.Id(User),
+                CurrentUser.IsAdmin(User));
+
+            return Ok(ToDto(note));
         }
     }
 }
